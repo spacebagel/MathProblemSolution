@@ -1,0 +1,150 @@
+﻿@page "/montecarlo"
+
+@rendermode InteractiveServer
+
+<PageTitle>Monte Carlo Pi</PageTitle>
+<script src="_content/Blazor.Extensions.Canvas/blazor.extensions.canvas.js"></script>
+
+<div class="points-container">
+    <div class="points-container-settings">
+            <p class="label-input">Count of Points:</p>
+            <InputNumber class="input-point" @bind-Value=pointCount ParsingErrorMessage="Must be an integer value" />
+        <div class="points-container-buttons-part">
+            <button class="check-button general-button-style" @onclick=GeneratePoints>Check</button>
+            <button class="general-button-style" @onclick=GeneratePointsFast>Check Fast</button>
+    </div>
+        <p class="result-label">Fall: @fallPointCount % (@fallIntPointCount)</p>
+        <p class="result-label">Dont fall: @dontFallPointCount % (@dontFallIntPointCount)</p>
+        <p class="result-label">Approximately Pi: @approximatelyPi</p>
+        <p class="result-label">Time: @time</p>
+    </div>
+    <div class="canvas-container">
+    <BECanvas Width="500" Height="300" @ref="_canvasReference"></BECanvas>
+    </div>
+</div>
+
+@code {
+    public long pointCount = 0;
+    public double fallPointCount, dontFallPointCount;
+    public long fallIntPointCount, dontFallIntPointCount;
+    public double approximatelyPi;
+    public string time = "";
+
+    private Canvas2DContext _context;
+    protected BECanvasComponent _canvasReference;
+
+    private async Task GeneratePoints()
+    {
+        ClearResult();
+        this._context = await this._canvasReference.CreateCanvas2DAsync();
+        await this._context.ClearRectAsync(0, 0, 500, 300);
+
+        await this._context.SetStrokeStyleAsync("red");
+
+        await this._context.BeginPathAsync();
+        await this._context.StrokeRectAsync(0, 0, 100, 100);
+        await this._context.ClosePathAsync();
+
+        await this._context.BeginPathAsync();
+        await this._context.ArcAsync(50, 50, 50, 0, 2 * Math.PI, true);
+        await this._context.StrokeAsync();
+        await this._context.ClosePathAsync();
+
+        Random rand = new Random();
+
+        double fallCount = 0.0;
+        Stopwatch stopWatch = new Stopwatch();
+        stopWatch.Start();
+        for (int x = 0; x < pointCount; x++)
+        {
+            await this._context.BeginPathAsync();
+            var x0 = rand.NextDouble();
+            var y0 = rand.NextDouble();
+
+            if ((50 - x0 * 100) * (50 - x0 * 100) + (50 - y0 * 100) * (50 - y0 * 100) <= 2500)
+            {
+                fallCount++;
+                await this._context.SetFillStyleAsync("green");
+                await this._context.ClosePathAsync();
+            }
+            else
+            {
+                await this._context.SetFillStyleAsync("blue");
+                await this._context.ClosePathAsync();
+            }
+
+            await this._context.ArcAsync(x0 * 100, y0 * 100, 1, 0, 2 * Math.PI, true);
+            await this._context.FillAsync();
+            await this._context.ClosePathAsync();
+        }
+        stopWatch.Stop();
+        TimeSpan ts = stopWatch.Elapsed;
+
+        time = String.Format("{0:00}:{1:00}:{2:00}.{3:00}", ts.Hours, ts.Minutes, ts.Seconds, ts.Milliseconds / 10);
+        fallPointCount = Math.Round(fallCount * 100 / pointCount, 6, MidpointRounding.AwayFromZero);
+        fallIntPointCount = (int)fallCount;
+        dontFallPointCount = Math.Round(100 - fallPointCount, 6, MidpointRounding.AwayFromZero);
+        dontFallIntPointCount = pointCount - fallIntPointCount;
+        approximatelyPi = fallCount / pointCount * 4;
+    }
+
+    private async Task GeneratePointsFast()
+    {
+        ClearResult();
+        Random rand = new Random();
+        double fallCount = 0.0;
+
+        Stopwatch stopWatch = new Stopwatch();
+        stopWatch.Start();
+        
+        // CPU threads
+        int countOfTask = 24;
+
+        long partOfCount = (long)(pointCount / countOfTask);
+        long[] taskResults = new long[countOfTask];
+
+        List<Task> tasks = new List<Task>();
+
+        for (int i = 0; i < countOfTask; i++)
+        {
+            var j = i;
+            tasks.Add(Task.Run(() => taskResults[j] = Calculations(partOfCount)));
+        }
+
+        await Task.WhenAll(tasks);
+
+        fallCount = taskResults.Sum();
+
+        stopWatch.Stop();
+        TimeSpan ts = stopWatch.Elapsed;
+        time = String.Format("{0:00}:{1:00}:{2:00}.{3:00}", ts.Hours, ts.Minutes, ts.Seconds, ts.Milliseconds / 10);
+        fallPointCount = Math.Round(fallCount * 100 / pointCount, 6, MidpointRounding.AwayFromZero);
+        fallIntPointCount = (long)fallCount;
+        dontFallPointCount = Math.Round(100 - fallPointCount, 6, MidpointRounding.AwayFromZero);
+        dontFallIntPointCount = pointCount - fallIntPointCount;
+        approximatelyPi = fallCount / pointCount * 4;
+    }
+
+    private void ClearResult()
+    {
+        fallPointCount = 0;
+        dontFallPointCount = 0;
+        fallIntPointCount = 0;
+        dontFallIntPointCount = 0;
+        approximatelyPi = 0;
+        time = "";
+    }
+
+    private long Calculations(long count)
+    {
+        long fallCount = 0;
+        Random rand = new Random();
+        for (long x = 0; x < count; x++)
+        {
+            var x0 = rand.NextDouble();
+            var y0 = rand.NextDouble();
+            fallCount += (x0 * x0 + y0 * y0 <= 1) ? 1 : 0;
+        }
+        return fallCount;
+    }
+}
